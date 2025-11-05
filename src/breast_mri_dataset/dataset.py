@@ -7,7 +7,7 @@ import numpy as np
 import imutils
 
 class Breast_MRI(Dataset):
-    def __init__(self, sequences, labels, features):
+    def __init__(self, sequences, labels, features=None):
         self.target_size = (512, 512)
         # Converts to Pillow image, resizes all images to (512, 512), normalizes range to [0, 1], and converts to torch stack
         self.transform = transforms.Compose([transforms.ToPILImage(),
@@ -31,7 +31,7 @@ class Breast_MRI(Dataset):
         # """
 
         sequence_images = []
-        sequence_path = self.sequences[index]['image_paths']
+        sequence_path = self.sequences[index]
         label = 0
         # label = self.labels[index]
         for image_path in sequence_path:
@@ -43,6 +43,7 @@ class Breast_MRI(Dataset):
             # Image Shape: torch.Size([1, 512, 512])
 
         sequence = torch.stack(sequence_images)  # Shape: [num_slices, C, H, W]
+        label = torch.tensor(label, dtype=torch.float32)
         return sequence, label
 
     def crop_image(self, image, path):
