@@ -24,13 +24,25 @@ def get_train_split():
     print(len(y_train))
     print(len(X_test_ids))
     print(len(y_test))
+
     # Currently list of patient ids
     # Want list of sequences
     # Filter sequences for training and testing
+    X_train = []
+    for sequence_id in X_train_ids:
+        X_train.append(sequence_id)
+
+
     X_train = [seq for seq in sequences if seq['patient_id'] in X_train_ids]
     X_test = [seq for seq in sequences if seq['patient_id'] in X_test_ids]
     y_train = [seq['label'] for seq in X_train]
     y_test = [seq['label'] for seq in X_test]
+
+
+
+
+    # Convert Dictionaries to list of sequences
+
 
     print(len(X_train))
     print(len(y_train))
