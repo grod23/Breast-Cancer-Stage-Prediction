@@ -1,4 +1,4 @@
-from dataset import Breast_MRI
+from .dataset import Breast_MRI
 from torch.utils.data import DataLoader
 from sklearn.model_selection import train_test_split
 import joblib
@@ -6,7 +6,7 @@ import sys
 
 def load_sequences_dict():
     # Load
-    sequences = joblib.load("sequence_data.joblib")
+    sequences = joblib.load("breast_mri_dataset/sequence_data.joblib")
     return sequences
 
 class DataUtils:
@@ -25,6 +25,8 @@ class DataUtils:
         # Train Test Split
         X_train_ids, X_test_ids, y_train, y_test = train_test_split(patient_ids, labels, test_size=0.20,
                                                                     random_state=30)
+
+        print(y_train)
         # Currently list of patient ids
         # Want list of sequences
         # Filter sequences for training and testing
