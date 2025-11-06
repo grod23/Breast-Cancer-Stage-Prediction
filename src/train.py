@@ -1,11 +1,15 @@
 from breast_mri_dataset.dataset_utils import DataUtils
-
+import torch
 import matplotlib.pyplot as plt
 import seaborn as sns
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import (classification_report,
                              accuracy_score, precision_score, recall_score, f1_score, roc_auc_score)
 from sklearn.metrics import confusion_matrix
+
+
+print(f'Device Available: {torch.cuda.is_available()}')
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 class Train:
     def __init__(self):
