@@ -5,6 +5,7 @@ import cv2
 import pydicom
 import numpy as np
 import imutils
+import sys
 
 class Breast_MRI(Dataset):
     def __init__(self, sequences, labels, features=None):
@@ -34,6 +35,7 @@ class Breast_MRI(Dataset):
         sequence_path = self.sequences[index]
         label = 0
         # label = self.labels[index]
+        # Pad sequences to be of uniform length
         for image_path in sequence_path:
             image = pydicom.dcmread(image_path).pixel_array
             # Image Shape: (448, 448)
@@ -43,6 +45,7 @@ class Breast_MRI(Dataset):
             # Image Shape: torch.Size([1, 512, 512])
 
         sequence = torch.stack(sequence_images)  # Shape: [num_slices, C, H, W]
+        # sequence = pad_sequence(sequence, batch_first=True)
         label = torch.tensor(label, dtype=torch.float32)
         return sequence, label
 
@@ -90,3 +93,16 @@ class Breast_MRI(Dataset):
         return cropped_image
 
 
+# Apply before PyTorch transforms
+# def cv2_preprocess(image):
+#     # Denoise
+#     image = cv2.fastNlMeansDenoising(image)
+#
+#     # CLAHE (Contrast Limited Adaptive Histogram Equalization)
+#     clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+#     image = clahe.apply(image)
+#
+#     # Edge enhancement (optional)
+#     # edges = cv2.Canny(image, 100, 200)
+#
+#     return image
