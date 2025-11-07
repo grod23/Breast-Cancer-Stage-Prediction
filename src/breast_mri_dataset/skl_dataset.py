@@ -74,7 +74,12 @@ class SKL_Dataset:
             # Ensure correct image format
             image = (image * 255).astype(np.uint8)
 
-            # 1. HOG features (Captures shapes/edges)
+            # HOG features (Histogram of Oriented Gradient): Captures shapes/edges
+            # 1. optional) global image normalisation
+            # 2. computing the gradient image in x and y
+            # 3. computing gradient histograms
+            # 4. normalising across blocks
+            # 5. flattening into a feature vector
             hog_features = hog(
                 image,
                 orientations=9,
@@ -85,7 +90,7 @@ class SKL_Dataset:
 
             features.extend(hog_features)
 
-            # 2. GLCM texture features (Strong in medical imaging)
+            # 2. GLCM texture features(Gray Level Co-occurence Matrices): Strong in medical imaging
             try:
                 glcm = graycomatrix(
                     image,
