@@ -2,7 +2,7 @@ from train import Train
 
 def main():
     train = Train()
-    train.random_forest()
+    train.train()
 
 
 if __name__ == '__main__':
