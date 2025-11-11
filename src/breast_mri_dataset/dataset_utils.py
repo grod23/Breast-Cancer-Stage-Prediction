@@ -23,8 +23,9 @@ def load_sequences_dict():
     return sequences
 
 class DataUtils:
-    def __init__(self):
+    def __init__(self, batch_size):
         self.sequences = load_sequences_dict()
+        self.batch_size = batch_size
         self.target_size = (64,128,128)
         self.spacing = (1.0, 1.0, 1.0)
         self.n_splits = 5
@@ -226,9 +227,9 @@ class DataUtils:
     def create_dataloaders(self):
         train_dataset, test_dataset = self.create_datasets()
         # Only shuffle the training data, num_workers for parallelization
-        training_loader = DataLoader(train_dataset, batch_size=1, num_workers=4,
+        training_loader = DataLoader(train_dataset, batch_size=self.batch_size, num_workers=4,
                                      shuffle=True, pin_memory=torch.cuda.is_available())
-        testing_loader = DataLoader(test_dataset, batch_size=1, num_workers=4,
+        testing_loader = DataLoader(test_dataset, batch_size=self.batch_size, num_workers=4,
                                     shuffle=False, pin_memory=torch.cuda.is_available())
 
         return training_loader, testing_loader
