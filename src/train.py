@@ -16,14 +16,13 @@ class Train:
         self.training_logs = []
         self.validation_logs = []
         self.data_utils = DataUtils()
-        # self.training_loader, self.testing_loader = self.data_utils.create_dataloaders()
+        self.training_loader, self.testing_loader = self.data_utils.create_dataloaders()
         self.loss = nn.CrossEntropyLoss()
 
-        self.dataset = self.data_utils.create_datasets()
 
     def train(self):
         # Get one batch
-        batch = next(iter(self.dataset))
+        batch = next(iter(self.training_loader))
         features = batch["features"]  # shape: [batch_size, num_features]
         labels = batch["label"]  # shape: [batch_size, num_labels]
         images = batch["image_paths"]  # or "image_paths", depending on your pipeline

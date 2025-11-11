@@ -5,7 +5,7 @@ import monai
 from monai.data import (DataLoader, Dataset, CacheDataset, PersistentDataset,
                         create_test_image_3d, list_data_collate, decollate_batch)
 from monai.transforms import (
-    Compose, LoadImaged, EnsureChannelFirstd, Orientationd,
+    Compose, LoadImaged, EnsureChannelFirstd, ResizeWithPadOrCropd, Orientationd,
     CropForegroundd, ScaleIntensityRanged, Spacingd, Resized,
     NormalizeIntensityd, ToTensord, Activationsd, AsDiscreted,
     RandCropByPosNegLabeld, RandRotate90d, ScaleIntensityd,)
@@ -27,6 +27,7 @@ class DataUtils:
         self.sequences = load_sequences_dict()
         self.target_size = (64,128,128)
         self.spacing = (1.0, 1.0, 1.0)
+        self.n_splits = 5
         self.train_transform = Compose([
             # Loads Images using ITKReader which handles 3D volume better. Image_only provides metadata for spacing info
             LoadImaged(
@@ -38,24 +39,37 @@ class DataUtils:
             EnsureChannelFirstd(
                 keys=['image_paths']
             ),
-            # Standardize orientation (Axes are flipped/reordered to [R, A, S]. The voxel data is
-            # automatically transposed and/or mirrored so the anatomical directions match RAS.)
-            # Orientationd(
-            #     keys=["image_paths"],
-            #     axcodes="RAS"  # Right-Anterior-Superior standard
-            # ),
+            # Remove background slices (reduces variability)
+            # This crops empty slices at start/end of volume
+            CropForegroundd(
+                keys=["image_paths"],
+                source_key="image_paths",
+                margin=5  # Keep small margin for context
+            ),
             # Ensures consistent voxel spacing
             Spacingd(
                 keys=["image_paths"],
                 pixdim=self.spacing,
                 mode="bilinear"
             ),
-            # Ensures consistent image/sequence size
-            Resized(
+            # STEP 2: Handle variable length intelligently
+            # ResizeWithPadOrCropd is BETTER than Resized for variable lengths
+            # - If depth < 64: Pads with zeros (no distortion)
+            # - If depth > 64: Crops from center (minimal loss)
+            # - If depth ≈ 64: Does nothing
+            ResizeWithPadOrCropd(
                 keys=["image_paths"],
                 spatial_size=self.target_size,
-                mode='trilinear'  # Trilinear for 3D
+                mode='edge'  # 'edge' mode pads by repeating edge values
             ),
+
+            # Standardize orientation (Axes are flipped/reordered to [R, A, S]. The voxel data is
+            # automatically transposed and/or mirrored so the anatomical directions match RAS.)
+            # Orientationd(
+            #     keys=["image_paths"],
+            #     axcodes="RAS"  # Right-Anterior-Superior standard
+            # ),
+
             # Z-Score Normalization (data - mean) / std_dev
             NormalizeIntensityd(
                 keys=["image_paths"],
@@ -73,32 +87,43 @@ class DataUtils:
             LoadImaged(
                 keys=['image_paths'],
                 reader='ITKReader',
-                image_only=False,
-                ensure_channel_first=True,  # ITKReader can add channel dim automatically
+                image_only=False
             ),
-            # (Currently redundant) Ensures correct channel format (Channels, Depth, Height, Width)
+            # Ensures correct channel format (Channels, Depth, Height, Width)
             EnsureChannelFirstd(
-                keys=['image_paths'],
-                channel_dim='no_channel'  # Tells MONAI there is no channel dimension yet
+                keys=['image_paths']
             ),
-            # Standardize orientation (Axes are flipped/reordered to [R, A, S]. The voxel data is
-            # automatically transposed and/or mirrored so the anatomical directions match RAS.)
-            # Orientationd(
-            #     keys=["image_paths"],
-            #     axcodes="RAS"  # Right-Anterior-Superior standard
-            # ),
+            # Remove background slices (reduces variability)
+            # This crops empty slices at start/end of volume
+            CropForegroundd(
+                keys=["image_paths"],
+                source_key="image_paths",
+                margin=5  # Keep small margin for context
+            ),
             # Ensures consistent voxel spacing
             Spacingd(
                 keys=["image_paths"],
                 pixdim=self.spacing,
                 mode="bilinear"
             ),
-            # Ensures consistent image/sequence size
-            Resized(
+            # STEP 2: Handle variable length intelligently
+            # ResizeWithPadOrCropd is BETTER than Resized for variable lengths
+            # - If depth < 64: Pads with zeros (no distortion)
+            # - If depth > 64: Crops from center (minimal loss)
+            # - If depth ≈ 64: Does nothing
+            ResizeWithPadOrCropd(
                 keys=["image_paths"],
                 spatial_size=self.target_size,
-                mode='trilinear'  # Trilinear for 3D
+                mode='edge'  # 'edge' mode pads by repeating edge values
             ),
+
+            # Standardize orientation (Axes are flipped/reordered to [R, A, S]. The voxel data is
+            # automatically transposed and/or mirrored so the anatomical directions match RAS.)
+            # Orientationd(
+            #     keys=["image_paths"],
+            #     axcodes="RAS"  # Right-Anterior-Superior standard
+            # ),
+
             # Z-Score Normalization (data - mean) / std_dev
             NormalizeIntensityd(
                 keys=["image_paths"],
@@ -132,7 +157,7 @@ class DataUtils:
         print(f'Labels Length: {len(labels)}')
 
         # Count combined TNM distributions
-        combined_counts = Counter(labels)
+        combined_counts = Counter(tuple(label) for label in labels)
         print("Combined (T,N,M) distribution:")
         for combo, count in combined_counts.most_common():
             print(f"{combo}: {count}")
@@ -187,81 +212,23 @@ class DataUtils:
         X_train = [patient_dict for patient_dict in X_train if patient_dict and patient_dict['image_paths']]
         X_test = [patient_dict for patient_dict in X_test if patient_dict and patient_dict['image_paths']]
 
-        for x in X_train:
-            sequence = x.get('image_paths')
-            if not isinstance(sequence, list):
-                print(type(sequence))
-                print(len(sequence))
-                print(sequence)
-                raise Exception('Found tuple')
-
-        for x in X_test:
-            sequence = x.get('image_paths')
-            if not isinstance(sequence, list):
-                print(type(sequence))
-                print(len(sequence))
-                print(sequence)
-                raise Exception('Found tuple')
-
-        # y_train = [list(seq['label']) for seq in self.sequences if seq['patient_id'] in X_train_ids]
-        # y_test = [list(seq['label']) for seq in self.sequences if seq['patient_id'] in X_test_ids]
-
         return X_train, X_test
 
-    def get_one(self):
-        reader = PydicomReader()
-        patient_dict = self.sequences[0]
-        # images = patient_dict.get('image_paths')
-        # for image in images:
-        #     image = pydicom.dcmread(image)
-        #     pixel_array = image.pixel_array
-        #     # Print each tag with description using f-strings
-        #     image_slice = image[0x0020, 0x0013].value
-        #     print(f"Slice: {image_slice}")
-        #     print(f"Shape: {pixel_array.shape}, dtype: {pixel_array.dtype}")
-        #     print(f"Modality: {image[0x0008, 0x0060].value}")
-        #     print(f"Study Description: {image[0x0008, 0x1030].value}")
-        #     print(f"Series Description: {image[0x0008, 0x103E].value}")
-        #     print(f"Scanning Sequence: {image[0x0018, 0x0020].value}")
-        #     print(f"Slice Thickness: {image[0x0018, 0x0050].value}")
-        #     print(f"Pixel Bandwidth: {image[0x0018, 0x0095].value}")
-        #     print(f"Patient Position: {image[0x0018, 0x5100].value}")
-        #     print(f"Image Position (Patient): {image[0x0020, 0x0032].value}")
-        #     print(f"Image Orientation (Patient): {image[0x0020, 0x0037].value}")
-        #     print(f"Slice Location: {image[0x0020, 0x1041].value}")
-        #     print(f"Rows: {image[0x0028, 0x0010].value}")
-        #     print(f"Columns: {image[0x0028, 0x0011].value}")
-        #     print(f"Pixel Spacing: {image[0x0028, 0x0030].value}")
-        #     print('-' * 50)
-        #
-        # print(patient_dict)
-
-        print(patient_dict.get('features'))
-        return patient_dict
-
-
     def create_datasets(self):
-
-        test = self.get_one()
-        dataset = Dataset(data=[test], transform=self.train_transform)
-        loader = DataLoader(dataset, batch_size=1, num_workers=0,
-                   shuffle=True, pin_memory=torch.cuda.is_available())
-        return loader
-
         # Get train test split
-        # X_train, X_test = self.get_train_split()
-        # # Create dataset instances
-        # train_dataset = Dataset(data=X_train, transform=self.train_transform)
-        # test_dataset = Dataset(data=X_test, transform=self.test_transform)
-        #
-        # return train_dataset, test_dataset
+        X_train, X_test = self.get_train_split()
+        # Create dataset instances
+        train_dataset = Dataset(data=X_train, transform=self.train_transform)
+        test_dataset = Dataset(data=X_test, transform=self.test_transform)
+
+        return train_dataset, test_dataset
 
     def create_dataloaders(self):
         train_dataset, test_dataset = self.create_datasets()
         # Only shuffle the training data, num_workers for parallelization
-        training_loader = DataLoader(train_dataset, batch_size=1, num_workers=0,
+        training_loader = DataLoader(train_dataset, batch_size=1, num_workers=4,
                                      shuffle=True, pin_memory=torch.cuda.is_available())
-        testing_loader = DataLoader(test_dataset, batch_size=1, num_workers=0,
+        testing_loader = DataLoader(test_dataset, batch_size=1, num_workers=4,
                                     shuffle=False, pin_memory=torch.cuda.is_available())
 
         return training_loader, testing_loader
