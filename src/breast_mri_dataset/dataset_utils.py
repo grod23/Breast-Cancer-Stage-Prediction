@@ -6,7 +6,7 @@ from monai.data import (DataLoader, Dataset, CacheDataset, PersistentDataset,
                         create_test_image_3d, list_data_collate, decollate_batch)
 from monai.transforms import (
     Compose, LoadImaged, EnsureChannelFirstd, ResizeWithPadOrCropd, Orientationd,
-    CropForegroundd, ScaleIntensityRanged, Spacingd, Resized,
+    CropForegroundd, ScaleIntensityRanged, Spacingd, Resized, EnsureTyped,
     NormalizeIntensityd, ToTensord, Activationsd, AsDiscreted,
     RandCropByPosNegLabeld, RandRotate90d, ScaleIntensityd,)
 from monai.inferers import sliding_window_inference
@@ -23,10 +23,10 @@ def load_sequences_dict():
     return sequences
 
 class DataUtils:
-    def __init__(self, batch_size):
+    def __init__(self, batch_size, image_size):
         self.sequences = load_sequences_dict()
         self.batch_size = batch_size
-        self.target_size = (64,128,128)
+        self.image_size = image_size
         self.spacing = (1.0, 1.0, 1.0)
         self.n_splits = 5
         self.train_transform = Compose([
@@ -60,7 +60,7 @@ class DataUtils:
             # - If depth ≈ 64: Does nothing
             ResizeWithPadOrCropd(
                 keys=["image_paths"],
-                spatial_size=self.target_size,
+                spatial_size=self.image_size,
                 mode='edge'  # 'edge' mode pads by repeating edge values
             ),
 
@@ -79,7 +79,12 @@ class DataUtils:
             ),
             # Converts Images, Labels, and Features to tensor
             ToTensord(
-                keys=["image_paths", "label", "features"])
+                keys=["image_paths", "label", "features"]
+            ),
+            # Convert label dtype to long for classification
+            EnsureTyped(
+                keys=["label"], dtype=torch.long
+            ),
             # ScaleIntensityd(keys=["image"], a_min=0, a_max=1000, b_min=0.0, b_max=1.0),
         ])
 
@@ -114,7 +119,7 @@ class DataUtils:
             # - If depth ≈ 64: Does nothing
             ResizeWithPadOrCropd(
                 keys=["image_paths"],
-                spatial_size=self.target_size,
+                spatial_size=self.image_size,
                 mode='edge'  # 'edge' mode pads by repeating edge values
             ),
 
@@ -133,8 +138,15 @@ class DataUtils:
             ),
             # Converts Images, Labels, and Features to tensor
             ToTensord(
-                keys=["image_paths", "label", "features"])
+                keys=["image_paths", "label", "features"]
+            ),
+
+            # Convert label dtype to long for classification
+            EnsureTyped(
+                keys=["label"], dtype=torch.long
+            ),
             # ScaleIntensityd(keys=["image"], a_min=0, a_max=1000, b_min=0.0, b_max=1.0),
+
         ])
 
     def get_train_split(self):
