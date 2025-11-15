@@ -114,8 +114,8 @@ class Train:
                 batch_size = y_labels.shape[0] * 3  # Batch size of 3 but 3 labels per batch so total 9
                 predicted_total += batch_size
                 # Training Accuracy
-                print(f'Correct: {correct} / {batch_size}')
-                print(f'Total Correct: {total_correct} / {predicted_total}')
+                # print(f'Correct: {correct} / {batch_size}')
+                # print(f'Total Correct: {total_correct} / {predicted_total}')
 
             # Log Training Loss
             train_accuracy = total_correct / predicted_total
@@ -170,7 +170,6 @@ class Train:
                 print(f'Test Batch - Correct: {correct} / {batch_size}')
 
         test_accuracy = total_correct / total_predicted
-        print(f'Test Accuracy: {test_accuracy}')
         return test_accuracy
 
     def results(self):
@@ -183,3 +182,15 @@ class Train:
         plt.ylabel('Loss', fontsize=20)
         plt.show()
 
+        # Test Accuracy
+        test_accuracy = self.test()
+        print(f'Test Accuracy: {test_accuracy}')
+
+
+    def save_model(self):
+        torch.save(self.model.state_dict(), 'vit_model.pth')
+
+    def load_model(self):
+        self.model = MultiModalTransformer()
+        self.model.load_state_dict(torch.load('vit_model.pth'))
+        self.model.eval()  # Set to evaluation mode
