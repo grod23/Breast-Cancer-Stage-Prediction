@@ -11,10 +11,11 @@ from matplotlib.animation import FuncAnimation, PillowWriter
 from mpl_toolkits.mplot3d import Axes3D
 from monai.visualize import matshow3d, blend_images
 
-import sys
 
 print(f'Device Available: {torch.cuda.is_available()}')
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+torch.manual_seed(67)
+np.random.seed(67)
 
 class Train:
     def __init__(self):
@@ -23,7 +24,7 @@ class Train:
         self.validation_logs = []
         self.testing_logs = []
         # Hyperparameters
-        self.epochs = 100
+        self.epochs = 120
         self.batch_size = 3
         self.learning_rate = 0.0003
         self.weight_decay = 0.001

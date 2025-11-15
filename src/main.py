@@ -1,7 +1,9 @@
 from train import Train
 
 def main():
+
     train = Train()
+    print(train.model)
     train.train()
     train.results()
     train.save_model()
