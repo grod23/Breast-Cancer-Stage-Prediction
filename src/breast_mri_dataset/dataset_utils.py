@@ -1,34 +1,44 @@
-import pydicom
-from monai.data import PydicomReader
+import shutil
+
 import torch
-import monai
-from monai.data import (DataLoader, Dataset, CacheDataset, PersistentDataset,
-                        create_test_image_3d, list_data_collate, decollate_batch)
+from monai.data import (DataLoader, PersistentDataset,
+                        create_test_image_3d, list_data_collate, decollate_batch, list_data_collate)
 from monai.transforms import (
     Compose, LoadImaged, EnsureChannelFirstd, ResizeWithPadOrCropd, Orientationd,
     CropForegroundd, ScaleIntensityRanged, Spacingd, Resized, EnsureTyped,
-    NormalizeIntensityd, ToTensord, Activationsd, AsDiscreted,
-    RandCropByPosNegLabeld, RandRotate90d, ScaleIntensityd,)
-from monai.inferers import sliding_window_inference
+    NormalizeIntensityd, ToTensord, Activationsd, AsDiscreted, PadListDataCollate,
+    RandCropByPosNegLabeld, RandRotate90d, ScaleIntensityd, RandSpatialCropd)
 from monai.metrics import DiceMetric
 from monai.visualize import plot_2d_or_3d_image
 from sklearn.model_selection import train_test_split
 import joblib
 from collections import Counter
 import sys
+import os
 
 def load_sequences_dict():
     # Load sequence dictionary Jupyter Notebook
-    sequences = joblib.load("breast_mri_dataset/sequence_data.joblib")
+    # sequences = joblib.load("breast_mri_dataset/sequence_data.joblib")
+    sequences = joblib.load("breast_mri_dataset/subset_sequence_data.joblib")
     return sequences
 
 class DataUtils:
-    def __init__(self, batch_size, image_size):
+    def __init__(self, batch_size, image_size, spacing, roi_size):
+        # Cache directory for MONAI PersistentDataset
+        # Caches previous transformations for faster computation
+        self.cache_dir = "cache"
         self.sequences = load_sequences_dict()
         self.batch_size = batch_size
         self.image_size = image_size
-        self.spacing = (1.0, 1.0, 1.0)
+        self.spacing = spacing
+        self.roi_size = roi_size
         self.n_splits = 5
+        #  Multiprocessing
+        self.num_workers = 1
+        #  "Transforms a list of dictionaries of tensors into a list of dictionaries
+        #  of tensors that have the same size to appease DataLoader"
+        # self.collate_fn = PadListDataCollate(mode="constant", constant_values=(-1,))
+        self.collate_fn = list_data_collate   # https://github.com/Project-MONAI/MONAI/issues/6279
         self.train_transform = Compose([
             # Loads Images using ITKReader which handles 3D volume better. Image_only provides metadata for spacing info
             LoadImaged(
@@ -60,10 +70,16 @@ class DataUtils:
             # - If depth ≈ 64: Does nothing
             ResizeWithPadOrCropd(
                 keys=["image_paths"],
-                spatial_size=self.image_size,
+                spatial_size=self.roi_size,
                 mode='edge'  # 'edge' mode pads by repeating edge values
             ),
 
+            # PATCH-BASED SAMPLING (128³ recommended)
+            RandSpatialCropd(
+                keys=["image_paths"],
+                roi_size=self.roi_size,
+                random_size=False,
+            ),
             # Standardize orientation (Axes are flipped/reordered to [R, A, S]. The voxel data is
             # automatically transposed and/or mirrored so the anatomical directions match RAS.)
             # Orientationd(
@@ -78,13 +94,8 @@ class DataUtils:
                 channel_wise=False
             ),
             # Converts Images, Labels, and Features to tensor
-            ToTensord(
-                keys=["image_paths", "label", "features"]
-            ),
-            # Convert label dtype to long for classification
-            EnsureTyped(
-                keys=["label"], dtype=torch.long
-            ),
+            EnsureTyped(keys=["image_paths", "features"], dtype=torch.float32, track_meta=False),
+            EnsureTyped(keys=["label"], dtype=torch.long, track_meta=False)
             # ScaleIntensityd(keys=["image"], a_min=0, a_max=1000, b_min=0.0, b_max=1.0),
         ])
 
@@ -137,16 +148,9 @@ class DataUtils:
                 channel_wise=False
             ),
             # Converts Images, Labels, and Features to tensor
-            ToTensord(
-                keys=["image_paths", "label", "features"]
-            ),
-
-            # Convert label dtype to long for classification
-            EnsureTyped(
-                keys=["label"], dtype=torch.long
-            ),
+            EnsureTyped(keys=["image_paths", "features"], dtype=torch.float32, track_meta=False),
+            EnsureTyped(keys=["label"], dtype=torch.long, track_meta=False)
             # ScaleIntensityd(keys=["image"], a_min=0, a_max=1000, b_min=0.0, b_max=1.0),
-
         ])
 
     def get_train_split(self):
@@ -228,21 +232,40 @@ class DataUtils:
         return X_train, X_test
 
     def create_datasets(self):
+        # Reset cache directory
+        if os.path.exists(self.cache_dir):
+            print('Clearing Cache Directory')
+            # shutil.rmtree(self.cache_dir)
+
         # Get train test split
         X_train, X_test = self.get_train_split()
         # Create dataset instances
-        train_dataset = Dataset(data=X_train, transform=self.train_transform)
-        test_dataset = Dataset(data=X_test, transform=self.test_transform)
+        train_dataset = PersistentDataset(data=X_train, transform=self.train_transform,
+                                          cache_dir=self.cache_dir)
+        test_dataset = PersistentDataset(data=X_test, transform=self.test_transform,
+                                         cache_dir=self.cache_dir)
 
         return train_dataset, test_dataset
 
     def create_dataloaders(self):
         train_dataset, test_dataset = self.create_datasets()
         # Only shuffle the training data, num_workers for parallelization
-        training_loader = DataLoader(train_dataset, batch_size=self.batch_size, num_workers=4,
-                                     shuffle=True, pin_memory=torch.cuda.is_available())
-        testing_loader = DataLoader(test_dataset, batch_size=self.batch_size, num_workers=4,
-                                    shuffle=False, pin_memory=torch.cuda.is_available())
+        training_loader = DataLoader(train_dataset,
+                                     batch_size=self.batch_size,
+                                     shuffle=True,
+                                     num_workers=self.num_workers,
+                                     pin_memory=torch.cuda.is_available(),
+                                     collate_fn=None,
+                                    persistent_workers=True
+                                     )
+        testing_loader = DataLoader(test_dataset,
+                                    batch_size=self.batch_size,
+                                    shuffle=False,
+                                    num_workers=self.num_workers,
+                                    pin_memory=torch.cuda.is_available(),
+                                    collate_fn=None,
+                                    persistent_workers=True
+                                    )
 
         return training_loader, testing_loader
 

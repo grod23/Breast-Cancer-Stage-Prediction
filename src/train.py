@@ -2,6 +2,7 @@ from breast_mri_dataset.dataset_utils import DataUtils
 from mm_vit import MultiModalTransformer
 import torch
 import torch.nn as nn
+from monai.inferers import sliding_window_inference
 import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
@@ -22,16 +23,20 @@ class Train:
         self.validation_logs = []
         self.testing_logs = []
         # Hyperparameters
-        self.epochs = 10
+        self.epochs = 100
         self.batch_size = 3
-        self.learning_rate = 0.0001
+        self.learning_rate = 0.0003
         self.weight_decay = 0.001
         self.dropout_rate = 0.0
-        self.image_size = (64, 128, 128)
+        self.image_size = (256, 256, 160)
+        # Patch Learning
+        self.roi_size = (128, 128, 128)
+        self.spacing = (1.0, 1.0, 1.0)
         # Init Training Model
-        self.model = MultiModalTransformer(image_size=self.image_size).to(device)
+        self.model = MultiModalTransformer().to(device)
         # Data Utils
-        self.data_utils = DataUtils(batch_size=self.batch_size, image_size=self.image_size)
+        self.data_utils = DataUtils(batch_size=self.batch_size, image_size=self.image_size,
+                                    spacing=self.spacing, roi_size=self.roi_size)
         self.training_loader, self.testing_loader = self.data_utils.create_dataloaders()
         self.optimizer = torch.optim.AdamW(self.model.parameters(), lr=self.learning_rate, weight_decay=self.weight_decay)
         self.scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(self.optimizer, mode='min', factor=0.1, patience=3)
@@ -69,10 +74,10 @@ class Train:
 
     def train(self):
         # Training Loop
-        correct = 0
-        total = 0
+        total_correct = 0
+        predicted_total = 0
         self.model.train()
-        for epochs in range(self.epochs):
+        for epoch in range(self.epochs):
             # Loss tracking for each label
             epoch_loss = 0.0
             for batch in self.training_loader:
@@ -85,11 +90,13 @@ class Train:
                 # (T N M) Labels
                 label_T, label_N, label_M = y_labels[:, 0], y_labels[:, 1], y_labels[:, 2]
                 # (T N M) Predictions
+
                 prediction_T, prediction_N, prediction_M = self.model(X_images, X_features)
                 # (T N M) loss values
                 loss_T = self.loss_fn(prediction_T, label_T)
                 loss_N = self.loss_fn(prediction_N, label_N)
                 loss_M = self.loss_fn(prediction_M, label_M)
+                # Aggregate losses
                 total_loss = loss_T + loss_N + loss_M
                 # Backpropagation
                 total_loss.backward()
@@ -98,24 +105,75 @@ class Train:
                 # Update loss values for each label
                 epoch_loss += total_loss.item()
                 # Track training accuracy
-                correct += (prediction_T.argmax(dim=1) == label_T).sum().item()
-                correct += (prediction_N.argmax(dim=1) == label_N).sum().item()
-                correct += (prediction_M.argmax(dim=1) == label_M).sum().item()
+                correct = (
+                        (prediction_T.argmax(dim=1) == label_T).sum().item() +
+                        (prediction_N.argmax(dim=1) == label_N).sum().item() +
+                        (prediction_M.argmax(dim=1) == label_M).sum().item()
+                )
+                total_correct += correct
                 batch_size = y_labels.shape[0] * 3  # Batch size of 3 but 3 labels per batch so total 9
-                print(f'Batch Size: {batch_size}')
-                print(f'Correct: {correct}')
-                total += batch_size
-                print(f'Total: {total}')
+                predicted_total += batch_size
+                # Training Accuracy
+                print(f'Correct: {correct} / {batch_size}')
+                print(f'Total Correct: {total_correct} / {predicted_total}')
 
             # Log Training Loss
-            train_accuracy = correct / total
-            train_loss = total_loss / len(self.training_loader)
+            train_accuracy = total_correct / predicted_total
+            train_loss = epoch_loss  / len(self.training_loader)
             self.training_logs.append(train_loss)
-            print(f'Tumor Training Accuracy: {train_accuracy}')
-            print(f'Tumor Loss: {train_loss}')
+            print(f'Epoch: {epoch}')
+            print(f'Training Accuracy: {train_accuracy}')
+            print(f'Train Loss: {train_loss}')
 
-        print('Training Done')
 
+    def test(self):
+        total_correct = 0
+        total_predicted = 0
+
+        # Set model to evaluation
+        self.model.eval()
+        with torch.no_grad():
+            for batch in self.testing_loader:
+                # Extract Features from MONAI transforms 'key'
+                X_images = batch['image_paths'].to(device, non_blocking=True)
+                X_features = batch['features'].to(device, non_blocking=True)
+                y_labels = batch['label'].to(device, non_blocking=True)
+                # (T N M) Labels
+                label_T, label_N, label_M = y_labels[:, 0], y_labels[:, 1], y_labels[:, 2]
+
+                # Wrapper function for ensure image and feature inputs to sliding window inference
+                def predictor(image_patch):
+                    # X_features are the same for all patches of the same image
+                    # Expand features to match the batch size of patches
+                    batch_features = X_features.repeat(image_patch.shape[0], 1)
+                    return self.model(image_patch, batch_features)
+
+                # Apply sliding window inference
+                prediction_T, prediction_N, prediction_M = sliding_window_inference(
+                    inputs=X_images,
+                    roi_size=self.roi_size,
+                    sw_batch_size=self.batch_size,
+                    predictor=predictor,
+                    overlap=0.25
+                )
+
+                correct = (
+                        (prediction_T.argmax(dim=1) == label_T).sum().item() +
+                        (prediction_N.argmax(dim=1) == label_N).sum().item() +
+                        (prediction_M.argmax(dim=1) == label_M).sum().item()
+                )
+
+                total_correct += correct
+                batch_size = y_labels.shape[0] * 3
+                total_predicted += batch_size
+
+                print(f'Test Batch - Correct: {correct} / {batch_size}')
+
+        test_accuracy = total_correct / total_predicted
+        print(f'Test Accuracy: {test_accuracy}')
+        return test_accuracy
+
+    def results(self):
         # Plot Training Loss
         plt.figure(figsize=(10, 10))
         plt.plot(self.training_logs, label='Training Loss')
@@ -124,3 +182,4 @@ class Train:
         plt.xlabel('Epochs', fontsize=20)
         plt.ylabel('Loss', fontsize=20)
         plt.show()
+
