@@ -1,20 +1,17 @@
-import shutil
-
 import torch
-from monai.data import (DataLoader, PersistentDataset,
-                        create_test_image_3d, list_data_collate, decollate_batch, list_data_collate)
+from monai.data import (DataLoader, PersistentDataset, list_data_collate, create_test_image_3d)
 from monai.transforms import (
-    Compose, LoadImaged, EnsureChannelFirstd, ResizeWithPadOrCropd, Orientationd,
-    CropForegroundd, ScaleIntensityRanged, Spacingd, Resized, EnsureTyped,
-    NormalizeIntensityd, ToTensord, Activationsd, AsDiscreted, PadListDataCollate,
-    RandCropByPosNegLabeld, RandRotate90d, ScaleIntensityd, RandSpatialCropd)
+    Compose, LoadImaged, EnsureChannelFirstd, ResizeWithPadOrCropd, CropForegroundd, Spacingd,
+    EnsureTyped, NormalizeIntensityd, RandRotate90d, RandSpatialCropd, RandFlipd, RandScaleIntensityd,
+    RandShiftIntensityd, RandGaussianNoised, RandGaussianSmoothd)
 from monai.metrics import DiceMetric
 from monai.visualize import plot_2d_or_3d_image
 from sklearn.model_selection import train_test_split
-import joblib
 from collections import Counter
-import sys
+import shutil
+import joblib
 import os
+
 
 def load_sequences_dict():
     # Load sequence dictionary Jupyter Notebook
@@ -39,17 +36,24 @@ class DataUtils:
         #  of tensors that have the same size to appease DataLoader"
         # self.collate_fn = PadListDataCollate(mode="constant", constant_values=(-1,))
         self.collate_fn = list_data_collate   # https://github.com/Project-MONAI/MONAI/issues/6279
+        # =================================================================
+        # TRAINING TRANSFORMS
+        # =================================================================
         self.train_transform = Compose([
-            # Loads Images using ITKReader which handles 3D volume better. Image_only provides metadata for spacing info
+            # ─────────────────────────────────────────────────────────────
+            # STAGE 1: LOADING & BASIC PREPROCESSING
+            # ─────────────────────────────────────────────────────────────
             LoadImaged(
                 keys=['image_paths'],
-                reader='ITKReader',
-                image_only=False
+                reader='ITKReader',  # Loads Images using ITKReader which handles 3D volume better
+                image_only=False  # Image_only provides metadata for spacing info
             ),
-            # Ensures correct channel format (Channels, Depth, Height, Width)
             EnsureChannelFirstd(
-                keys=['image_paths']
+                keys=['image_paths']  # Ensures correct channel format (Channels, Depth, Height, Width)
             ),
+            # ─────────────────────────────────────────────────────────────
+            # STAGE 2: SPATIAL PREPROCESSING
+            # ─────────────────────────────────────────────────────────────
             # Remove background slices (reduces variability)
             # This crops empty slices at start/end of volume
             CropForegroundd(
@@ -57,59 +61,95 @@ class DataUtils:
                 source_key="image_paths",
                 margin=5  # Keep small margin for context
             ),
-            # Ensures consistent voxel spacing
             Spacingd(
                 keys=["image_paths"],
-                pixdim=self.spacing,
+                pixdim=self.spacing,  # Standardize voxel spacing
                 mode="bilinear"
             ),
-            # STEP 2: Handle variable length intelligently
-            # ResizeWithPadOrCropd is BETTER than Resized for variable lengths
-            # - If depth < 64: Pads with zeros (no distortion)
-            # - If depth > 64: Crops from center (minimal loss)
-            # - If depth ≈ 64: Does nothing
-            ResizeWithPadOrCropd(
-                keys=["image_paths"],
-                spatial_size=self.roi_size,
-                mode='edge'  # 'edge' mode pads by repeating edge values
-            ),
-
-            # PATCH-BASED SAMPLING (128³ recommended)
             RandSpatialCropd(
                 keys=["image_paths"],
-                roi_size=self.roi_size,
+                roi_size=self.roi_size,  # PATCH-BASED SAMPLING (128³)
                 random_size=False,
             ),
-            # Standardize orientation (Axes are flipped/reordered to [R, A, S]. The voxel data is
-            # automatically transposed and/or mirrored so the anatomical directions match RAS.)
-            # Orientationd(
-            #     keys=["image_paths"],
-            #     axcodes="RAS"  # Right-Anterior-Superior standard
-            # ),
-
-            # Z-Score Normalization (data - mean) / std_dev
-            NormalizeIntensityd(
+            # ─────────────────────────────────────────────────────────────
+            # STAGE 3: INTENSITY PREPROCESSING
+            # ─────────────────────────────────────────────────────────────
+            NormalizeIntensityd(  # Z-Score Normalization (data - mean) / std_dev
                 keys=["image_paths"],
                 nonzero=True,
                 channel_wise=False
             ),
-            # Converts Images, Labels, and Features to tensor
-            EnsureTyped(keys=["image_paths", "features"], dtype=torch.float32, track_meta=False),
-            EnsureTyped(keys=["label"], dtype=torch.long, track_meta=False)
-            # ScaleIntensityd(keys=["image"], a_min=0, a_max=1000, b_min=0.0, b_max=1.0),
-        ])
+            # ─────────────────────────────────────────────────────────────
+            # STAGE 4: DATA AUGMENTATION (TRAINING ONLY)
+            # ─────────────────────────────────────────────────────────────
+            # Spatial augmentations
+            RandRotate90d(
+                keys=["image_paths"],
+                prob=0.5,
+                spatial_axes=(0, 1)  # Only rotate in axial plane
+            ),
 
+            RandFlipd(
+                keys=["image_paths"],
+                prob=0.5,
+                spatial_axis=0  # Left-right flip
+            ),
+            # Intensity augmentations (helps with scanner variability)
+            RandScaleIntensityd(
+                keys=["image_paths"],
+                factors=0.2,  # ±20% intensity scaling
+                prob=0.5
+            ),
+
+            RandShiftIntensityd(
+                keys=["image_paths"],
+                offsets=0.1,  # Small intensity shifts
+                prob=0.5
+            ),
+
+            RandGaussianNoised(
+                keys=["image_paths"],
+                prob=0.3,
+                mean=0.0,
+                std=0.05  # Small random noise
+            ),
+
+            RandGaussianSmoothd(  # Random smoothing
+                keys=["image_paths"],
+                prob=0.3,
+                sigma_x=(0.5, 1.0),
+                sigma_y=(0.5, 1.0),
+                sigma_z=(0.5, 1.0)
+            ),
+            # ─────────────────────────────────────────────────────────────
+            # STAGE 5: Tensor Conversion
+            # ─────────────────────────────────────────────────────────────
+            EnsureTyped(
+                keys=["image_paths", "features"],
+                dtype=torch.float32,
+                track_meta=False
+            ),
+            EnsureTyped(
+                keys=["label"],
+                dtype=torch.long,
+                track_meta=False
+            )
+        ])
         self.test_transform = Compose([
-            # Loads Images using ITKReader which handles 3D volume better. Image_only provides metadata for spacing info
+            # ─────────────────────────────────────────────────────────────
+            # STAGE 1: LOADING & BASIC PREPROCESSING
+            # ─────────────────────────────────────────────────────────────
             LoadImaged(
                 keys=['image_paths'],
-                reader='ITKReader',
-                image_only=False
+                reader='ITKReader',  # Loads Images using ITKReader which handles 3D volume better
+                image_only=False  # Image_only provides metadata for spacing info
             ),
-            # Ensures correct channel format (Channels, Depth, Height, Width)
             EnsureChannelFirstd(
-                keys=['image_paths']
+                keys=['image_paths']  # Ensures correct channel format (Channels, Depth, Height, Width)
             ),
+            # ─────────────────────────────────────────────────────────────
+            # STAGE 2: SPATIAL PREPROCESSING
+            # ─────────────────────────────────────────────────────────────
             # Remove background slices (reduces variability)
             # This crops empty slices at start/end of volume
             CropForegroundd(
@@ -117,10 +157,9 @@ class DataUtils:
                 source_key="image_paths",
                 margin=5  # Keep small margin for context
             ),
-            # Ensures consistent voxel spacing
             Spacingd(
                 keys=["image_paths"],
-                pixdim=self.spacing,
+                pixdim=self.spacing,  # Standardize voxel spacing
                 mode="bilinear"
             ),
             # STEP 2: Handle variable length intelligently
@@ -133,24 +172,27 @@ class DataUtils:
                 spatial_size=self.image_size,
                 mode='edge'  # 'edge' mode pads by repeating edge values
             ),
-
-            # Standardize orientation (Axes are flipped/reordered to [R, A, S]. The voxel data is
-            # automatically transposed and/or mirrored so the anatomical directions match RAS.)
-            # Orientationd(
-            #     keys=["image_paths"],
-            #     axcodes="RAS"  # Right-Anterior-Superior standard
-            # ),
-
-            # Z-Score Normalization (data - mean) / std_dev
-            NormalizeIntensityd(
+            # ─────────────────────────────────────────────────────────────
+            # STAGE 3: INTENSITY PREPROCESSING
+            # ─────────────────────────────────────────────────────────────
+            NormalizeIntensityd(  # Z-Score Normalization (data - mean) / std_dev
                 keys=["image_paths"],
                 nonzero=True,
                 channel_wise=False
             ),
-            # Converts Images, Labels, and Features to tensor
-            EnsureTyped(keys=["image_paths", "features"], dtype=torch.float32, track_meta=False),
-            EnsureTyped(keys=["label"], dtype=torch.long, track_meta=False)
-            # ScaleIntensityd(keys=["image"], a_min=0, a_max=1000, b_min=0.0, b_max=1.0),
+            # ─────────────────────────────────────────────────────────────
+            # STAGE 5: Tensor Conversion
+            # ─────────────────────────────────────────────────────────────
+            EnsureTyped(
+                keys=["image_paths", "features"],
+                dtype=torch.float32,
+                track_meta=False
+            ),
+            EnsureTyped(
+                keys=["label"],
+                dtype=torch.long,
+                track_meta=False
+            )
         ])
 
     def get_train_split(self):
@@ -205,7 +247,6 @@ class DataUtils:
             shuffle=True,
             random_state=30
         )
-
         # self.sequences is list of dictionary patients
         # Train Test split currently list of patient ID's
         # MONAI needs list of dictionary sequences
@@ -215,7 +256,6 @@ class DataUtils:
         # 'image_paths':
         # 'label':
         # }
-
         X_train = [patient_dict for patient_dict in self.sequences
                    if patient_dict['patient_id'] in X_train_ids]
 
@@ -224,18 +264,16 @@ class DataUtils:
 
         # May contain empty lists of sequences.
         # Sequences may also contain empty lists of image paths.
-
         # Removes all empty lists
         X_train = [patient_dict for patient_dict in X_train if patient_dict and patient_dict['image_paths']]
         X_test = [patient_dict for patient_dict in X_test if patient_dict and patient_dict['image_paths']]
-
         return X_train, X_test
 
     def create_datasets(self):
         # Reset cache directory
         if os.path.exists(self.cache_dir):
             print('Clearing Cache Directory')
-            # shutil.rmtree(self.cache_dir)
+            shutil.rmtree(self.cache_dir)
 
         # Get train test split
         X_train, X_test = self.get_train_split()
@@ -244,7 +282,6 @@ class DataUtils:
                                           cache_dir=self.cache_dir)
         test_dataset = PersistentDataset(data=X_test, transform=self.test_transform,
                                          cache_dir=self.cache_dir)
-
         return train_dataset, test_dataset
 
     def create_dataloaders(self):
@@ -266,7 +303,6 @@ class DataUtils:
                                     collate_fn=None,
                                     persistent_workers=True
                                     )
-
         return training_loader, testing_loader
 
 

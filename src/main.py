@@ -1,14 +1,12 @@
 from train import Train
 
 def main():
-
     train = Train()
     print(train.model)
     train.train()
+    # train.load_model()
     train.results()
-    train.save_model()
     # train.display_batch()
-
 
 if __name__ == '__main__':
     main()

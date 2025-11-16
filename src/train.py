@@ -2,7 +2,6 @@ from breast_mri_dataset.dataset_utils import DataUtils
 from mm_vit import MultiModalTransformer
 import torch
 import torch.nn as nn
-from monai.inferers import sliding_window_inference
 import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
@@ -10,7 +9,8 @@ from sklearn.metrics import confusion_matrix, classification_report
 from matplotlib.animation import FuncAnimation, PillowWriter
 from mpl_toolkits.mplot3d import Axes3D
 from monai.visualize import matshow3d, blend_images
-
+import sys
+from pathlib import Path
 
 print(f'Device Available: {torch.cuda.is_available()}')
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -41,7 +41,7 @@ class Train:
         self.training_loader, self.testing_loader = self.data_utils.create_dataloaders()
         self.optimizer = torch.optim.AdamW(self.model.parameters(), lr=self.learning_rate, weight_decay=self.weight_decay)
         self.scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(self.optimizer, mode='min', factor=0.1, patience=3)
-        self.loss_fn = nn.CrossEntropyLoss()
+        self.loss_fn = nn.CrossEntropyLoss(ignore_index=-1)
 
     def display_batch(self):
         # Get one batch
@@ -70,7 +70,6 @@ class Train:
             every_n=1,  # Show every 6th slice
             cmap='gray'
         )
-
         plt.show()
 
     def train(self):
@@ -114,9 +113,6 @@ class Train:
                 total_correct += correct
                 batch_size = y_labels.shape[0] * 3  # Batch size of 3 but 3 labels per batch so total 9
                 predicted_total += batch_size
-                # Training Accuracy
-                # print(f'Correct: {correct} / {batch_size}')
-                # print(f'Total Correct: {total_correct} / {predicted_total}')
 
             # Log Training Loss
             train_accuracy = total_correct / predicted_total
@@ -141,39 +137,25 @@ class Train:
                 y_labels = batch['label'].to(device, non_blocking=True)
                 # (T N M) Labels
                 label_T, label_N, label_M = y_labels[:, 0], y_labels[:, 1], y_labels[:, 2]
-
-                # Wrapper function for ensure image and feature inputs to sliding window inference
-                def predictor(image_patch):
-                    # X_features are the same for all patches of the same image
-                    # Expand features to match the batch size of patches
-                    batch_features = X_features.repeat(image_patch.shape[0], 1)
-                    return self.model(image_patch, batch_features)
-
-                # Apply sliding window inference
-                prediction_T, prediction_N, prediction_M = sliding_window_inference(
-                    inputs=X_images,
-                    roi_size=self.roi_size,
-                    sw_batch_size=self.batch_size,
-                    predictor=predictor,
-                    overlap=0.25
-                )
-
+                prediction_T, prediction_N, prediction_M = self.model(X_images, X_features)
+                # Summation of correct predictions across all labels
                 correct = (
                         (prediction_T.argmax(dim=1) == label_T).sum().item() +
                         (prediction_N.argmax(dim=1) == label_N).sum().item() +
                         (prediction_M.argmax(dim=1) == label_M).sum().item()
                 )
-
                 total_correct += correct
                 batch_size = y_labels.shape[0] * 3
                 total_predicted += batch_size
-
                 print(f'Test Batch - Correct: {correct} / {batch_size}')
-
         test_accuracy = total_correct / total_predicted
         return test_accuracy
 
     def results(self):
+        # Test Accuracy
+        test_accuracy = self.test()
+        print(f'Test Accuracy: {test_accuracy}')
+
         # Plot Training Loss
         plt.figure(figsize=(10, 10))
         plt.plot(self.training_logs, label='Training Loss')
@@ -183,15 +165,15 @@ class Train:
         plt.ylabel('Loss', fontsize=20)
         plt.show()
 
-        # Test Accuracy
-        test_accuracy = self.test()
-        print(f'Test Accuracy: {test_accuracy}')
-
-
     def save_model(self):
         torch.save(self.model.state_dict(), 'vit_model.pth')
 
     def load_model(self):
-        self.model = MultiModalTransformer()
-        self.model.load_state_dict(torch.load('vit_model.pth'))
+        # Portable Root
+        ROOT = Path(__file__).resolve().parents[1]
+        MODEL_PATH = ROOT / "results" / "vit_model.pth"
+        self.model = MultiModalTransformer().to(device)
+        # Load Model Weights
+        self.model.load_state_dict(torch.load(MODEL_PATH))
+        print(f'Loading Model from... {MODEL_PATH}')
         self.model.eval()  # Set to evaluation mode
