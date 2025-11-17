@@ -41,14 +41,14 @@ class Train:
         self.training_loader, self.testing_loader = self.data_utils.create_dataloaders()
         self.optimizer = torch.optim.AdamW(self.model.parameters(), lr=self.learning_rate, weight_decay=self.weight_decay)
         self.scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(self.optimizer, mode='min', factor=0.1, patience=3)
-        self.loss_fn = nn.CrossEntropyLoss(ignore_index=-1)
+        self.loss_fn = nn.CrossEntropyLoss(ignore_index=-1, reduction='mean')
 
     def display_batch(self):
         # Get one batch
         batch = next(iter(self.training_loader))
         features = batch["features"]  # shape: [batch_size, num_features]
         labels = batch["label"]  # shape: [batch_size, num_labels]
-        images = batch["image_paths"]  # or "image_paths", depending on your pipeline
+        images = batch["image_paths"]
 
         print("Images shape:", images.shape)  # Should be [B, C, D, H, W]
         print("Labels shape:", labels.shape)  # Should be [B, 3] if TNM
@@ -90,14 +90,20 @@ class Train:
                 # (T N M) Labels
                 label_T, label_N, label_M = y_labels[:, 0], y_labels[:, 1], y_labels[:, 2]
                 # (T N M) Predictions
-
                 prediction_T, prediction_N, prediction_M = self.model(X_images, X_features)
+                print(f'Prediction Tumor: {prediction_T}')
+                print(f'Prediction Node: {prediction_N}')
+                print(f'Prediction Metastasis: {prediction_M}')
                 # (T N M) loss values
                 loss_T = self.loss_fn(prediction_T, label_T)
                 loss_N = self.loss_fn(prediction_N, label_N)
                 loss_M = self.loss_fn(prediction_M, label_M)
+                print(f'Loss Tumor: {loss_T.item()}')
+                print(f'Loss Node: {loss_N.item()}')
+                print(f'Loss Metastasis: {loss_M.item()}')
                 # Aggregate losses
                 total_loss = loss_T + loss_N + loss_M
+                print(f'Total Loss: {total_loss.item()}')
                 # Backpropagation
                 total_loss.backward()
                 # Update Learnable Parameters

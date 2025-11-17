@@ -66,6 +66,11 @@ class DataUtils:
                 pixdim=self.spacing,  # Standardize voxel spacing
                 mode="bilinear"
             ),
+            ResizeWithPadOrCropd(
+                keys=["image_paths"],
+                spatial_size=self.image_size,
+                mode='edge'  # 'edge' mode pads by repeating edge values
+            ),
             RandSpatialCropd(
                 keys=["image_paths"],
                 roi_size=self.roi_size,  # PATCH-BASED SAMPLING (128³)
@@ -273,7 +278,7 @@ class DataUtils:
         # Reset cache directory
         if os.path.exists(self.cache_dir):
             print('Clearing Cache Directory')
-            shutil.rmtree(self.cache_dir)
+            # shutil.rmtree(self.cache_dir)
 
         # Get train test split
         X_train, X_test = self.get_train_split()
