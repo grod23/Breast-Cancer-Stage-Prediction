@@ -7,7 +7,7 @@ def main():
     # occlusion.plot_heatmap()
     print(train.model)
     train.train()
-    train.save_model()
+    # train.save_model()
     # train.load_model()
     train.results()
     # train.display_batch()

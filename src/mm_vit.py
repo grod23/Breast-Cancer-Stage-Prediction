@@ -1,8 +1,9 @@
 import torch
 import torch.nn as nn
-from monai.networks.nets import DenseNet121
+from monai.networks.nets import DenseNet, UNet, UNETR, SwinUNETR, ViTAutoEnc, VISTA3D, DenseNet121
 from typing import Tuple, Optional
 import torch.nn.functional as F
+# from tests.networks.nets.test_milmodel import pretrained
 
 #     Architecture:
 #         1. 3D Vision Transformer (ViT) processes MRI volumes independently
@@ -21,10 +22,10 @@ class MLP_Encoder(nn.Module):
         self.encoder = nn.Sequential(
             nn.Linear(in_features=input_dim, out_features=256),
             nn.ReLU(),
-            # nn.Dropout(0.2),
+            nn.Dropout(0.2),
             nn.Linear(in_features=256, out_features=self.output_dim),
             nn.ReLU(),
-            # nn.Dropout(0.1),
+            nn.Dropout(0.1),
         )
 
     def forward(self, X):
@@ -42,7 +43,7 @@ class DenseNetEncoder(nn.Module):
         self.densenet = DenseNet121(
             spatial_dims=3,  # 3D volumes
             in_channels=in_channels,
-            out_channels=2,  # dummy value, we'll extract features
+            out_channels=hidden_size,
             pretrained=False
         )
 
@@ -54,7 +55,7 @@ class DenseNetEncoder(nn.Module):
         self.projection = nn.Sequential(
             nn.Linear(densenet_features, hidden_size),
             nn.ReLU(),
-            # nn.Dropout(0.2)
+            nn.Dropout(0.2)
         )
 
     def forward(self, X):
@@ -70,6 +71,23 @@ class DenseNetEncoder(nn.Module):
 
         return projected
 
+    def load_model_weights(self):
+        # https: // github.com / Project - MONAI / tutorials / blob / main / self_supervised_pretraining / vit_unetr_ssl / ssl_finetune.ipynb
+        pretrained_path = ''
+        print("Loading Weights from the Path {}".format(pretrained_path))
+        vit_dict = torch.load(pretrained_path, weights_only=True)
+        vit_weights = vit_dict['state_dict']
+        # " Remove items of vit_weights if they are not in the ViT backbone (this is used in UNETR).
+        # For example, some variables names like conv3d_transpose.weight, conv3d_transpose.bias,
+        # conv3d_transpose_1.weight and conv3d_transpose_1.bias are used to match dimensions
+        # while pretraining with ViTAutoEnc and are not a part of ViT backbone".
+        model_dict = self.unet.vit.state_dict()
+        vit_weights = {k: v for k, v in vit_weights.items() if k in model_dict}
+        model_dict.update(vit_weights)
+        self.unet.vit.load_state_dict(model_dict)
+        del model_dict, vit_weights, vit_dict
+        print("Pretrained Weights Loaded!")
+
 class MultiModalTransformer(nn.Module):
     def __init__(self):
         super().__init__()
@@ -81,9 +99,11 @@ class MultiModalTransformer(nn.Module):
 
         # MLP for modality fusion
         self.fusion_head = nn.Sequential(
-            nn.Linear(image_hidden + tabular_hidden, 128),
+            nn.Linear(image_hidden + tabular_hidden, 256),
             nn.ReLU(),
-            # nn.Dropout(0.3),
+            nn.Dropout(0.3),
+            nn.Linear(256, 128),
+            nn.ReLU()
         )
 
         # Each label has different output classes
