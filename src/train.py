@@ -1,5 +1,6 @@
 from breast_mri_dataset.dataset_utils import DataUtils
 from mm_vit import MultiModalTransformer
+from breast_mri_dataset.focal_loss import FocalLoss
 import torch
 import torch.nn as nn
 import numpy as np
@@ -33,9 +34,9 @@ class Train:
         self.true_M = []
         # Hyperparameters
         self.epochs = 30
-        self.batch_size = 3
-        self.learning_rate = 0.00001
-        self.weight_decay = 0.003
+        self.batch_size = 2
+        self.learning_rate = 0.001
+        self.weight_decay = 0.001
         self.dropout_rate = 0.0
         self.image_size = (256, 256, 160)
         # Patch Learning
@@ -46,10 +47,20 @@ class Train:
         # Data Utils
         self.data_utils = DataUtils(batch_size=self.batch_size, image_size=self.image_size,
                                     spacing=self.spacing, roi_size=self.roi_size)
-        self.training_loader, self.validation_loader, self.testing_loader = self.data_utils.create_dataloaders()
-        self.optimizer = torch.optim.AdamW(self.model.parameters(), lr=self.learning_rate, weight_decay=self.weight_decay)
-        self.scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(self.optimizer, mode='min', factor=0.1, patience=3)
-        self.loss_fn = nn.CrossEntropyLoss(ignore_index=-1, reduction='mean')
+        self.training_loader, self.validation_loader, self.testing_loader = (
+            self.data_utils.create_dataloaders())
+        self.optimizer = torch.optim.AdamW(self.model.parameters(),
+                                           lr=self.learning_rate,
+                                           weight_decay=self.weight_decay)
+        self.scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(self.optimizer, mode='min', factor=0.5, patience=3)
+        # Class Weights
+        self.T_weights, self.N_weights, self.M_weights = self.data_utils.compute_weights()
+        # Label specific loss functions
+        self.T_loss_fn = FocalLoss(pos_weight=self.T_weights.to(device))
+        self.N_loss_fn = FocalLoss(pos_weight=self.N_weights.to(device))
+        self.M_loss_fn = FocalLoss(pos_weight=self.M_weights.to(device), ignore_index=-1, reduction='mean')
+
+
 
     def display_batch(self):
         # Get one batch
@@ -93,22 +104,21 @@ class Train:
                 # Reset Gradients
                 self.optimizer.zero_grad()
                 # Extract Features from MONAI transforms 'key'
-                X_images = batch['image_paths'].to(device, non_blocking=True)
-                X_features = batch['features'].to(device, non_blocking=True)
-                y_labels = batch['label'].to(device, non_blocking=True)
+                X_images = batch['Folder Path'].to(device, non_blocking=True)
+                X_features = batch['Features'].to(device, non_blocking=True)
+                y_labels = batch['Label'].to(device, non_blocking=True)
                 # (T N M) Labels
                 label_T, label_N, label_M = y_labels[:, 0], y_labels[:, 1], y_labels[:, 2]
                 # (T N M) Predictions
                 prediction_T, prediction_N, prediction_M = self.model(X_images, X_features)
                 # (T N M) loss values
-                loss_T = self.loss_fn(prediction_T, label_T)
-                loss_N = self.loss_fn(prediction_N, label_N)
-                loss_M = self.loss_fn(prediction_M, label_M)
-                # Aggregate losses
-                if torch.isnan(loss_M):
-                    total_loss = loss_T + loss_N
-                else:
-                    total_loss = loss_T + loss_N + loss_M
+                loss_T = self.T_loss_fn(prediction_T, label_T)
+                loss_N = self.N_loss_fn(prediction_N, label_N)
+                loss_M = self.M_loss_fn(prediction_M, label_M)
+                print(f'Loss T: {loss_T}')
+                print(f'Loss M: {loss_N}')
+                print(f'Loss M: {loss_M}')
+                total_loss = loss_T + loss_N + loss_M
                 # Backpropagation
                 total_loss.backward()
                 # Update Learnable Parameters
@@ -133,9 +143,9 @@ class Train:
             with torch.no_grad():
                 for batch in self.validation_loader:
                     # Extract Features from MONAI transforms 'key'
-                    X_images = batch['image_paths'].to(device, non_blocking=True)
-                    X_features = batch['features'].to(device, non_blocking=True)
-                    y_labels = batch['label'].to(device, non_blocking=True)
+                    X_images = batch['Folder Path'].to(device, non_blocking=True)
+                    X_features = batch['Features'].to(device, non_blocking=True)
+                    y_labels = batch['Label'].to(device, non_blocking=True)
                     label_T, label_N, label_M = y_labels[:, 0], y_labels[:, 1], y_labels[:, 2]
                     prediction_T, prediction_N, prediction_M = self.model(X_images, X_features)
                     # Summation of correct predictions across all labels
@@ -144,17 +154,21 @@ class Train:
                             (prediction_N.argmax(dim=1) == label_N).sum().item() +
                             (prediction_M.argmax(dim=1) == label_M).sum().item()
                     )
+                    # print(f'T Prediction: {prediction_T}')
+                    # print(f'N Prediction: {prediction_N}')
+                    # print(f'M Prediction: {prediction_M}')
+
                     # (T N M) loss values
-                    loss_T = self.loss_fn(prediction_T, label_T)
-                    loss_N = self.loss_fn(prediction_N, label_N)
-                    loss_M = self.loss_fn(prediction_M, label_M)
+                    loss_T = self.T_loss_fn(prediction_T, label_T)
+                    loss_N = self.N_loss_fn(prediction_N, label_N)
+                    loss_M = self.M_loss_fn(prediction_M, label_M)
                     # Aggregate losses
                     if torch.isnan(loss_M):
                         total_loss = loss_T + loss_N
                     else:
                         total_loss = loss_T + loss_N + loss_M
                     val_correct += correct
-                    batch_size = y_labels.shape[0] * 3
+                    batch_size = self.batch_size * 3  # 3 labels
                     val_epoch_loss += total_loss.item() / 3
                     val_predicted += batch_size
 
@@ -185,9 +199,9 @@ class Train:
         with torch.no_grad():
             for batch in self.testing_loader:
                 # Extract Features from MONAI transforms 'key'
-                X_images = batch['image_paths'].to(device, non_blocking=True)
-                X_features = batch['features'].to(device, non_blocking=True)
-                y_labels = batch['label'].to(device, non_blocking=True)
+                X_images = batch['Folder Path'].to(device, non_blocking=True)
+                X_features = batch['Features'].to(device, non_blocking=True)
+                y_labels = batch['Label'].to(device, non_blocking=True)
                 print(f'Image Shape: {X_images.shape}')
                 # (T N M) Labels
                 label_T, label_N, label_M = y_labels[:, 0], y_labels[:, 1], y_labels[:, 2]
@@ -274,3 +288,5 @@ class Train:
         self.model.load_state_dict(torch.load(MODEL_PATH))
         print(f'Loading Model from... {MODEL_PATH}')
         self.model.eval()  # Set to evaluation mode
+
+

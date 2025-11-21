@@ -107,9 +107,9 @@ class MultiModalTransformer(nn.Module):
         )
 
         # Each label has different output classes
-        self.output_T = nn.Linear(in_features=128, out_features=5)
-        self.output_N = nn.Linear(in_features=128, out_features=4)
-        self.output_M = nn.Linear(in_features=128, out_features=2)
+        self.output_T = nn.Linear(in_features=128, out_features=5, bias=True)
+        self.output_N = nn.Linear(in_features=128, out_features=4, bias=True)
+        self.output_M = nn.Linear(in_features=128, out_features=2, bias=True)
 
     def forward(self, X_images, X_features):
         image_features= self.image_encoder(X_images)
