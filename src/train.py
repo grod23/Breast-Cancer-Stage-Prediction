@@ -33,9 +33,9 @@ class Train:
         self.true_N = []
         self.true_M = []
         # Hyperparameters
-        self.epochs = 30
-        self.batch_size = 2
-        self.learning_rate = 0.001
+        self.epochs = 10
+        self.batch_size = 3
+        self.learning_rate = 0.00005
         self.weight_decay = 0.001
         self.dropout_rate = 0.0
         self.image_size = (256, 256, 160)
