@@ -1,9 +1,11 @@
 import torch
 import torch.nn as nn
-from monai.networks.nets import DenseNet, UNet, UNETR, SwinUNETR, ViTAutoEnc, VISTA3D, DenseNet121
-from typing import Tuple, Optional
+from monai.networks.nets import (DenseNet, UNet, UNETR, SwinUNETR, ViTAutoEnc, HighResNet,
+                                 VISTA3D, DenseNet121, ViT, ResNet, Densenet121)
+import torch
 import torch.nn.functional as F
 # from tests.networks.nets.test_milmodel import pretrained
+import sys
 
 #     Architecture:
 #         1. 3D Vision Transformer (ViT) processes MRI volumes independently
@@ -14,115 +16,111 @@ import torch.nn.functional as F
 # Since labels is multioutput: (T, N, M)
 # Treat each label as its own input and output
 
-# Tabular Multi Layer Perceptron
-class MLP_Encoder(nn.Module):
-    def __init__(self, input_dim=19, output_dim=128):  # For now, we have 19 features
+class ROIBranch(nn.Module):
+    def __init__(self, in_channels=1, feature_dim=256):
         super().__init__()
-        self.output_dim = output_dim
-        self.encoder = nn.Sequential(
-            nn.Linear(in_features=input_dim, out_features=256),
-            nn.ReLU(),
-            nn.Dropout(0.2),
-            nn.Linear(in_features=256, out_features=self.output_dim),
-            nn.ReLU(),
-            nn.Dropout(0.1),
+
+        self.backbone = HighResNet(
+            spatial_dims=3,
+            in_channels=in_channels,
+            out_channels=feature_dim,
+            dropout_prob=0.2
         )
+        # Add global pooling to convert spatial features to fixed vector
+        self.global_pool = nn.AdaptiveAvgPool3d(1)
+    def forward(self, X):
+        # X: [B, 1, H, W, D]
+        # print(f'ROI Input: {X.shape}')
+        roi_features = self.backbone(X)  # [B, 256, H', W', D']
+        # print(f'ROI Features (spatial): {roi_features.shape}')
+        # Pool to fixed size
+        pooled = self.global_pool(roi_features)  # [B, 256, 1, 1, 1]
+        pooled_features = pooled.view(pooled.size(0), -1)  # [B, 256]
+        # print(f'ROI Features (pooled): {pooled_features.shape}\n')
+        return pooled_features  # [B, feature_dim]
+
+
+class VisionTransformer(nn.Module):
+    def __init__(self, image_size, in_channels=1, feature_dim=256):
+        super().__init__()
+
+        self.backbone = ViT(
+            spatial_dims=3,
+            in_channels=in_channels,
+            img_size=image_size,
+            patch_size=(16, 16, 16),
+            # hidden_size=feature_dim,
+            # num_heads=12,
+            dropout_rate=0.2,
+            classification=False
+        )
+        self.projection = nn.Linear(768, feature_dim)
 
     def forward(self, X):
-        X = self.encoder(X)  # Shape: ([3, 1, 128])
-        X = X.squeeze(1)  # Shape: ([3, 128])
+        # print(f'Input Sequence: {X.shape}')
+        sequence_features = self.backbone(X)[1] # [12, B, feature_dim, hidden_size]
+        # Sequence features is a list of layers
+        # Retrieve last layers CLS token
+        last_layer = sequence_features[-1]  # Shape: [1, 256, 768]
+        # print(f'Last Layer: {last_layer.shape}')
+        cls_token = last_layer[:, 0]  # Shape: [1, 768]
+        # print(f'CLS Token: {cls_token.shape}')
+        output = self.projection(cls_token)
+        # print(f'ViT Output: {output.shape}')
+        return output
+
+
+class HierarchicalAttention(nn.Module):
+    def __init__(self, embed_dim=256, num_heads=4):
+        super().__init__()
+        self.attn = nn.MultiheadAttention(embed_dim, num_heads, batch_first=True)
+        self.norm = nn.LayerNorm(embed_dim)
+
+    def forward(self, roi_features, global_features):
+        # print(f'Local Features: {roi_features.shape}')
+        # print(f'Global Features: {global_features.shape}')
+        # Both should now be [B, embed_dim]
+        # Stack into sequence for attention
+        X = torch.stack([roi_features, global_features], dim=1)  # [B, 2, embed_dim]
+        # print(f'Stacked Features: {X.shape}')
+        # Self-attention over the two feature vectors
+        X2, _ = self.attn(X, X, X)  # [B, 2, embed_dim]
+        # print(f'Attention Features: {X2.shape}')
+        # Residual connection and normalization
+        X = self.norm(X + X2)
+        # print(f'LayerNorm Features: {X.shape}')
+        # Pool the two attended features
+        X = X.mean(dim=1)  # [B, embed_dim]
+        # print(f'Attention Output: {X.shape}\n')
         return X
 
-# Medical 3D Vision Transformer
-class DenseNetEncoder(nn.Module):
-    def __init__(self, in_channels=1, hidden_size=256):
+class MultiscaleClassifier(nn.Module):
+    def __init__(self, image_size, in_channels=1, feature_dim=256, num_classes=4):
         super().__init__()
-        self.hidden_size = hidden_size
+        self.roi_branch = ROIBranch(in_channels, feature_dim)
+        self.full_branch = VisionTransformer(image_size, in_channels, feature_dim)
+        self.hier_attn = HierarchicalAttention(feature_dim)
+        self.classifier = nn.Linear(feature_dim, num_classes)
 
-        # Initialize DenseNet for 3D classification
-        self.densenet = DenseNet121(
-            spatial_dims=3,  # 3D volumes
-            in_channels=in_channels,
-            out_channels=hidden_size,
-            pretrained=False
-        )
+    def forward(self, sequence, roi_patch):
+        # print(f'ROI Patch Shape: {roi_patch.shape}')
+        # print(f'Full Volume Shape: {sequence.shape}')
+        roi_features = self.roi_branch(roi_patch)
+        global_features = self.full_branch(sequence)
+        # print(f'Model ROI Features: {roi_features.shape}')
+        # print(f'Model Global Features: {global_features.shape}')
+        fusion_features = self.hier_attn(roi_features, global_features)
+        # print(f'Model Fusion Features: {fusion_features.shape}')
+        out = self.classifier(fusion_features)
+        # print(f'Model Logits Shape: {out.shape}')
+        # print(f'Model Logits: {out}\n')
+        return out
 
-        # DenseNet121 has 1024 features, DenseNet169 has 1664
-        feature_dims = 1024
-        densenet_features = feature_dims
 
-        # Project to desired hidden size
-        self.projection = nn.Sequential(
-            nn.Linear(densenet_features, hidden_size),
-            nn.ReLU(),
-            nn.Dropout(0.2)
-        )
-
-    def forward(self, X):
-        # Extract features from DenseNet (before final classification layer)
-        features = self.densenet.features(X)
-
-        # Global Average Pooling: [B, C, H, W, D] -> [B, C]
-        pooled = F.adaptive_avg_pool3d(features, (1, 1, 1))
-        flattened = pooled.view(pooled.size(0), -1)
-
-        # Project to hidden_size
-        projected = self.projection(flattened)
-
-        return projected
-
-    def load_model_weights(self):
-        # https: // github.com / Project - MONAI / tutorials / blob / main / self_supervised_pretraining / vit_unetr_ssl / ssl_finetune.ipynb
-        pretrained_path = ''
-        print("Loading Weights from the Path {}".format(pretrained_path))
-        vit_dict = torch.load(pretrained_path, weights_only=True)
-        vit_weights = vit_dict['state_dict']
-        # " Remove items of vit_weights if they are not in the ViT backbone (this is used in UNETR).
-        # For example, some variables names like conv3d_transpose.weight, conv3d_transpose.bias,
-        # conv3d_transpose_1.weight and conv3d_transpose_1.bias are used to match dimensions
-        # while pretraining with ViTAutoEnc and are not a part of ViT backbone".
-        model_dict = self.unet.vit.state_dict()
-        vit_weights = {k: v for k, v in vit_weights.items() if k in model_dict}
-        model_dict.update(vit_weights)
-        self.unet.vit.load_state_dict(model_dict)
-        del model_dict, vit_weights, vit_dict
-        print("Pretrained Weights Loaded!")
-
-class MultiModalTransformer(nn.Module):
-    def __init__(self):
+class MLPEncoder(nn.Module):
+    def __init__(self, num_features, output_dim = 256):
         super().__init__()
-        self.image_encoder = DenseNetEncoder()
-        self.tabular_encoder = MLP_Encoder()
-
-        image_hidden = self.image_encoder.hidden_size
-        tabular_hidden = self.tabular_encoder.output_dim
-
-        # MLP for modality fusion
-        self.fusion_head = nn.Sequential(
-            nn.Linear(image_hidden + tabular_hidden, 256),
-            nn.ReLU(),
-            nn.Dropout(0.3),
-            nn.Linear(256, 128),
-            nn.ReLU()
+        self.mlp = nn.Sequential(
+            nn.Linear(num_features, 128),
+            nn.Linear(128, output_dim)
         )
-
-        # Each label has different output classes
-        self.output_T = nn.Linear(in_features=128, out_features=5, bias=True)
-        self.output_N = nn.Linear(in_features=128, out_features=4, bias=True)
-        self.output_M = nn.Linear(in_features=128, out_features=2, bias=True)
-
-    def forward(self, X_images, X_features):
-        image_features= self.image_encoder(X_images)
-        tabular_features = self.tabular_encoder(X_features)
-
-        # print(f'Image Features: {image_features}')
-        # print(f'Image Features Shape: {image_features.shape}')
-        # print(f'Tabular Features Shape: {tabular_features.shape}')
-
-        combined = torch.cat([image_features, tabular_features], dim=1)
-        y = self.fusion_head(combined)
-        # Separately get output for each label
-        T_out = self.output_T(y)
-        N_out = self.output_N(y)
-        M_out = self.output_M(y)
-        return T_out, N_out, M_out
