@@ -12,14 +12,14 @@ import os
 import pydicom
 
 class DataUtils:
-    def __init__(self, batch_size, image_size, roi_size, spacing, margin):
+    def __init__(self, batch_size, image_size, spacing, margin):
         # Cache directory for MONAI PersistentDataset
         # Caches previous transformations for faster computation
         self.cache_dir = "cache"
         self.data_dir = "breast_mri_dataset/train_split.joblib"
         self.batch_size = batch_size
         self.margin = margin
-        self.transform = Transform(image_size=image_size, roi_size=roi_size, spacing=spacing, margin=margin)
+        self.transform = Transform(image_size=image_size, spacing=spacing, margin=margin)
         #  Multiprocessing
         self.num_workers = 2
         #  "Transforms a list of dictionaries of tensors into a list of dictionaries

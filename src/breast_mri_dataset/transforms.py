@@ -8,9 +8,8 @@ from monai.transforms import (
 
 # Image Preprocessing
 class Transform:
-    def __init__(self, image_size, roi_size, spacing, margin):
+    def __init__(self, image_size, spacing, margin):
         self.image_size = image_size
-        self.roi_size = roi_size
         self.spacing = spacing
         self.margin = margin
         self.train_transform = Compose([

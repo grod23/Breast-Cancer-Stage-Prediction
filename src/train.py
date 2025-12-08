@@ -37,12 +37,11 @@ class Train:
         self.learning_rate = 0.00003
         self.weight_decay = 0.05
         self.image_size = (360, 360)
-        self.roi_size = (16, 128, 128)
         self.spacing = (1.0, 1.0, 1.0)
         self.margin = 50
         # Init Training Model
         self.model = MultiModalClassifier(
-            fusion_dim=64,
+            fusion_dim=128,
             num_classes=4,
             num_clinical_features=5,
             fusion_strategy='concat'
@@ -50,7 +49,6 @@ class Train:
         # Data Utils
         self.data_utils = DataUtils(batch_size=self.batch_size,
                                     image_size=self.image_size,
-                                    roi_size=self.roi_size,
                                     spacing=self.spacing,
                                     margin=self.margin)
         self.training_loader, self.validation_loader, self.testing_loader = (
@@ -203,16 +201,13 @@ class Train:
                 label_T, label_N, label_M = y_labels[:, 0], y_labels[:, 1], y_labels[:, 2]
                 # Decrement T
                 label_T = torch.sub(label_T, 1)
-                print(f'X: {X_images.shape}')
+                print(label_T)
                 prediction_T = self.model(X_images, X_features)
                 # Summation of correct predictions across all labels
                 correct = (prediction_T.argmax(dim=1) == label_T).sum().item()
                 total_correct += correct
                 batch_size = y_labels.shape[0] # * 3
                 total_predicted += batch_size
-                print(f'Prediction: {prediction_T}({prediction_T.argmax(dim=1)}), Label: {label_T}')
-                print(f'Test Batch - Correct: {correct} / {batch_size}')
-
                 # Predict Report
                 self.pred_T.extend(prediction_T.argmax(dim=1).cpu().numpy())
                 self.true_T.extend(label_T.cpu().numpy())
