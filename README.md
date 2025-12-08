@@ -36,16 +36,16 @@ The 2.5D CNN serves as a comrpomise between 2D and 3D convolutional neural netwo
 XAI (Explainable AI) is essential for interpreting model decisions and gaining the trust of workers in their respective industry, especially in the field of medical imaging. The following is a sample GradCAM (Gradient Class Activation Map) visual that highlights image regions most influential to the model's prediction.
 
 ### Classification Report
-                precision    recall   f1-score    support
+                   precision    recall   f1-score    support
 
-   T-Stage 1       0.75      0.54      0.62        84
-   T-Stage 2       0.62      0.65      0.64        75
-   T-Stage 3       0.63      0.87      0.73        52
-   T-Stage 4       0.94      1.00      0.97        17
+       T-Stage 1       0.75      0.54      0.62        84
+       T-Stage 2       0.62      0.65      0.64        75
+       T-Stage 3       0.63      0.87      0.73        52
+       T-Stage 4       0.94      1.00      0.97        17
 
-    accuracy                           0.68        228
-   macro avg       0.74      0.76      0.74        228
-weighted avg       0.70      0.68      0.68        228
+        accuracy                           0.68        228
+       macro avg       0.74      0.76      0.74        228
+    weighted avg       0.70      0.68      0.68        228
 
 ### Confusion Matrix
 The confusion matrix assists in understanding where the model is confusing varying T-stage values. 
