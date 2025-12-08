@@ -29,6 +29,14 @@ Utilizing the MONAI framework, MRI volumes go through the following transformati
 - Z-Score standardization
 - Min-Max Normalization
 
+<table>
+  <tr>
+    <td><img src="results/p28_before.png" alt="Before Processing" width="300"></td>
+    <td><img src="results/p28_after.png" alt="After Processing" width="300"></td>
+  </tr>
+</table>
+
+
 ## 2.5D CNN
 The 2.5D CNN serves as a comrpomise between 2D and 3D convolutional neural networks. In medical imaging, where CT and MRI scans are inherently 3-Dimensional, this balance is crucial. The core idea is that we stack a small amount of neighboring slices (3-7) along the channel dimension. This strategy transforms 3D structural information while retaining a 2D image's spatial shape. This approach allows us to train a limited 3D volume with a 2D CNN. Therefore we gain the beneficial speed and resolution of a 2D CNN paired with the volumetric context of a 3D CNN. 
 
@@ -50,10 +58,16 @@ XAI (Explainable AI) is essential for interpreting model decisions and gaining t
 ### Confusion Matrix
 The confusion matrix assists in understanding where the model is confusing varying T-stage values. 
 
-
-![Confusion Matrix](Results/confusion_matrix.png)
-
+<img src="results/confusion_matrix.png" alt="Confusion Matrix" width="500">
 
 ### Future Works
 Our work is just the stepping stone to exploring machine learning models capable of predicting the full TNM staging. To advance our models practicality, we plan on incorporating the prediction of all 3 Tumor, Nodal, and Metastasis labels. Furthermore, we could translate these labels into a tumor stage prognosis ranging from stage I-IV. 
+
+## Contributors
+- Sara Lee  [@SUN-NULL](https://github.com/SUN-NULL)
+- Sunny Palcaco  [@saral1025](https://github.com/saral1025)
+
+## References
+- [MONAI](https://github.com/Project-MONAI/MONAI) for medical imaging preprocessing pipelines.
+- [ResNet](https://arxiv.org/abs/1512.03385) – Deep residual network used as the backbone for feature extraction.
  
