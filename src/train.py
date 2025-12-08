@@ -1,6 +1,6 @@
 from breast_mri_dataset.dataset_utils import DataUtils
-from model import MultiModalClassifier
 from breast_mri_dataset.transform_functions.focal_loss import FocalLoss
+from model import MultiModalClassifier
 import torch
 import numpy as np
 import matplotlib.pyplot as plt
@@ -32,7 +32,7 @@ class Train:
         self.true_N = []
         self.true_M = []
         # Hyperparameters
-        self.epochs = 35
+        self.epochs = 20
         self.batch_size = 4
         self.learning_rate = 0.00003
         self.weight_decay = 0.05
@@ -42,7 +42,7 @@ class Train:
         self.margin = 50
         # Init Training Model
         self.model = MultiModalClassifier(
-            fusion_dim=128,
+            fusion_dim=64,
             num_classes=4,
             num_clinical_features=5,
             fusion_strategy='concat'

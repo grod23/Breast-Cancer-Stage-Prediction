@@ -54,7 +54,6 @@ class CustomGradCAM:
     def get_heatmap(self):
         image, features, label, patient = self.get_next_image()
         image = image.unsqueeze(0)
-        print(f'Original Image Shape: {image.shape}')
         class ModelWrapper(nn.Module):
             def __init__(self, model, feature, batch_size):
                 super().__init__()
@@ -63,13 +62,9 @@ class CustomGradCAM:
                 self.batch_size = batch_size
 
             def __call__(self, gradcam_image):
-                # Needs to be of shape: [self.n_batches, 3, Height, Width]
-                print(f'Gradcam Image Shape: {gradcam_image.shape}')
-                # print(f'Occlusion Image Shape After Unsqueeze: {occlusion_image.shape}')
-                # Features have batch size of 1
-                features_batch = self.features.expand(self.batch_size, -1)  # Expands features to batch size of n_batches
-                print(f'Batch Features Shape: {features_batch.shape}')
-                prediction_T = self.model(gradcam_image, features_batch)
+                # Add batch dimension
+                self.features = self.features.unsqueeze(0)
+                prediction_T = self.model(gradcam_image, self.features)
                 return prediction_T
 
         wrapped_model = ModelWrapper(self.model, features, self.batch_size)

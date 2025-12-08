@@ -101,8 +101,18 @@ class DataUtils:
         return volume
 
     def get_train_split(self):
+        import sys
         # Load sequence dictionary Jupyter Notebook
         X_train, X_val, X_test = joblib.load(self.data_dir)
+
+        def percentage_label_4(split):
+            total = len(split)
+            count_4 = sum(1 for patient in split if patient['Label'][0] == 4.0)
+            return (count_4 / total) * 100
+        print("Percentage of label[0] == 4 in X_train: {:.2f}%".format(percentage_label_4(X_train)))
+        print("Percentage of label[0] == 4 in X_val: {:.2f}%".format(percentage_label_4(X_val)))
+        print("Percentage of label[0] == 4 in X_test: {:.2f}%".format(percentage_label_4(X_test)))
+        sys.exit()
         self.compute_target_size(X_train)
         return X_train, X_val, X_test
 

@@ -54,17 +54,15 @@ class MLPEncoder(nn.Module):
         return self.mlp(X_features)
 
 class SequenceEncoder25D(nn.Module):
-    def __init__(self, output_dim, in_channels=3, aggregation='attention'):
+    def __init__(self, output_dim, in_channels=3):
         super().__init__()
-        self.block_inplanes = 128
-        self.aggregation = aggregation
+        self.block_inplanes = 64
         self.backbone = ResNet(
             block='basic',
             n_input_channels=in_channels,
             spatial_dims=2,
             layers=[2, 2, 2, 2],
-            # layers=[1, 1, 1, 1],
-            block_inplanes = [16, 32, 64, self.block_inplanes],
+            block_inplanes = [16, 16, 32, self.block_inplanes],
             feed_forward=False
         )
         # Get output features from last stage
