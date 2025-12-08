@@ -1,5 +1,5 @@
 # Breast-Cancer-Stage-Prediction
-In this work, we developed a multimodal 2.5D CNN to predict the T-stage of breast tumors using clinical, radiomic, and imaging features. Multimodal approaches are becoming increasingly prevalent in medical-imaging machine-learning pipelines, and this work combines structured clinical data with 3D MRI volumes from multiple modalities to improve predictive performance. 
+In this work, we developed a **multimodal 2.5D CNN** to predict the T-stage of breast tumors using clinical, radiomic, and imaging features. Multimodal approaches are becoming increasingly prevalent in medical-imaging machine-learning pipelines, and this work combines structured clinical data with 3D MRI volumes from multiple modalities to improve predictive performance. 
 
 **Clone the repository**
 ```bash
@@ -41,7 +41,7 @@ Utilizing the MONAI framework, MRI volumes go through the following transformati
 The 2.5D CNN serves as a comrpomise between 2D and 3D convolutional neural networks. In medical imaging, where CT and MRI scans are inherently 3-Dimensional, this balance is crucial. The core idea is that we stack a small amount of neighboring slices (3-7) along the channel dimension. This strategy transforms 3D structural information while retaining a 2D image's spatial shape. This approach allows us to train a limited 3D volume with a 2D CNN. Therefore we gain the beneficial speed and resolution of a 2D CNN paired with the volumetric context of a 3D CNN. 
 
 ### Grad-CAM Visualization
-XAI (Explainable AI) is essential for interpreting model decisions and gaining the trust of workers in their respective industry, especially in the field of medical imaging. The following is a sample GradCAM (Gradient Class Activation Map) visual that highlights image regions most influential to the model's prediction.
+**XAI (Explainable AI)** is essential for interpreting model decisions and gaining the trust of workers in their respective industry, especially in the field of medical imaging. The following is a sample GradCAM (Gradient Class Activation Map) visual that highlights image regions most influential to the model's prediction.
 
 <img src="results/gradcam_prediction_4.png" alt="GradCAM Label 4, Prediction 4" width="500">
 
