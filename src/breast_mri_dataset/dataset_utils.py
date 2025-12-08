@@ -1,23 +1,15 @@
-from .roi_crop import CropROId
 from.transforms import Transform
-import torch
-from monai.data import (DataLoader, Dataset, CacheDataset, PersistentDataset, list_data_collate)
-from monai.transforms import (
-    Compose, LoadImaged, EnsureChannelFirstd, ResizeWithPadOrCropd, CropForegroundd, Spacingd,
-    EnsureTyped, NormalizeIntensityd, RandRotate90d, RandSpatialCropd, RandFlipd, RandScaleIntensityd,
-    RandShiftIntensityd, RandGaussianNoised, RandGaussianSmoothd, DeleteItemsd)
-from monai.visualize import plot_2d_or_3d_image
+from monai.data import (DataLoader, PersistentDataset)
+from monai.transforms import PadListDataCollate
 from sklearn.utils.class_weight import compute_class_weight
+from monai.visualize import matshow3d
+import matplotlib.pyplot as plt
+import torch
 import numpy as np
 from sympy import ceiling
-from collections import Counter
-import math
-import shutil
 import joblib
 import os
-import sys
 import pydicom
-
 
 class DataUtils:
     def __init__(self, batch_size, image_size, roi_size, spacing, margin):
@@ -29,11 +21,11 @@ class DataUtils:
         self.margin = margin
         self.transform = Transform(image_size=image_size, roi_size=roi_size, spacing=spacing, margin=margin)
         #  Multiprocessing
-        self.num_workers = 1
+        self.num_workers = 2
         #  "Transforms a list of dictionaries of tensors into a list of dictionaries
         #  of tensors that have the same size to appease DataLoader"
-        # self.collate_fn = PadListDataCollate(mode="constant", constant_values=(-1,))
-        self.collate_fn = list_data_collate   # https://github.com/Project-MONAI/MONAI/issues/6279
+        self.collate_fn = PadListDataCollate(mode="constant", constant_values=(-1,))
+        # self.collate_fn = list_data_collate   # https://github.com/Project-MONAI/MONAI/issues/6279
 
     def compute_target_size(self, train_data):
         max_height = 0
@@ -91,9 +83,22 @@ class DataUtils:
         print(f'Tumor Classes: {T_classes}')
         print(f'Tumor Weights: {T_weights}')
         # Return tensor weights
+        # T_weights = [0.84680851, 0.92990654, 0.71071429, 5]
         return (torch.tensor(T_weights, dtype=torch.float32),
                 torch.tensor(N_weights, dtype=torch.float32),
                 torch.tensor(M_weights, dtype=torch.float32))
+
+    def load_dicom_series(self, folder):
+        # load files
+        files = [os.path.join(folder, f)
+                 for f in os.listdir(folder) if f.endswith('.dcm')]
+        # read
+        slices = [pydicom.dcmread(f) for f in files]
+        # sort by slice order
+        slices.sort(key=lambda s: int(s.InstanceNumber))
+        # stack into 3D volume
+        volume = np.stack([s.pixel_array for s in slices], axis=0)
+        return volume
 
     def get_train_split(self):
         # Load sequence dictionary Jupyter Notebook
@@ -123,14 +128,6 @@ class DataUtils:
                                          transform=self.transform.test_transform,
                                          cache_dir=self.cache_dir
                                          )
-
-        # for idx in range(len(validation_dataset)):
-        #     sample = validation_dataset[idx]  # sample is usually a dict
-        #     print(f"Sample {idx}: keys = {sample.keys()}")
-        #     for key, value in sample.items():
-        #         print(f"{key}: type={type(value)}, shape={getattr(value, 'shape', None)}")
-        #
-        #     print(f'Image: {sample['ROI Crop']}')
         return train_dataset, validation_dataset, test_dataset
 
     def create_dataloaders(self):
@@ -142,7 +139,7 @@ class DataUtils:
                                      num_workers=self.num_workers,
                                      pin_memory=torch.cuda.is_available(),
                                      collate_fn=None,
-                                    persistent_workers=True
+                                     persistent_workers=True
                                      )
         validation_loader = DataLoader(validation_dataset,
                                      batch_size=self.batch_size,
@@ -160,7 +157,6 @@ class DataUtils:
                                     collate_fn=None,
                                     persistent_workers=True
                                     )
-
         return training_loader, validation_loader, testing_loader
 
 

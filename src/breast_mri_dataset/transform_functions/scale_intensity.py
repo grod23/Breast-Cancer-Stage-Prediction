@@ -1,7 +1,7 @@
 from monai.transforms import MapTransform, ScaleIntensityRange
 from monai.config import KeysCollection
-import numpy as np
 
+# Custom Min-Max Normalization
 class ScaleIntensity(MapTransform):
     def __init__(
             self,

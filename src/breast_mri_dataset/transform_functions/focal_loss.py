@@ -1,31 +1,8 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-torch.set_printoptions(precision=4, sci_mode=False, linewidth=150)
-
 
 class FocalLoss(nn.Module):
-    """
-    Focal Loss for multiclass classification with positive weights and ignore index.
-
-    Parameters:
-    -----------
-    alpha : float or torch.Tensor
-        Weighting factor in [0, 1] to balance positive/negative examples,
-        or a tensor of weights for each class. Default: 1.0
-    gamma : float
-        Exponent of the modulating factor (1 - p_t)^gamma. Default: 2.0
-    pos_weight : torch.Tensor or None
-        A weight of positive examples per class. Must be a vector with length
-        equal to the number of classes. Default: None
-    ignore_index : int
-        Specifies a target value that is ignored and does not contribute to
-        the input gradient. Default: -100
-    reduction : str
-        Specifies the reduction to apply to the output: 'none' | 'mean' | 'sum'.
-        Default: 'mean'
-    """
-
     # https://medium.com/data-scientists-diary/implementing-focal-loss-in-pytorch-for-class-imbalance-24d8aa3b59d9
     def __init__(self, alpha=1, gamma=2.0, pos_weight=None, ignore_index=None, reduction='mean'):
         super(FocalLoss, self).__init__()
