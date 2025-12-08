@@ -43,6 +43,8 @@ The 2.5D CNN serves as a comrpomise between 2D and 3D convolutional neural netwo
 ### Grad-CAM Visualization
 XAI (Explainable AI) is essential for interpreting model decisions and gaining the trust of workers in their respective industry, especially in the field of medical imaging. The following is a sample GradCAM (Gradient Class Activation Map) visual that highlights image regions most influential to the model's prediction.
 
+<img src="results/gradcam_prediction_4.png" alt="GradCAM Label 4, Prediction 4" width="500">
+
 ### Classification Report
                    precision    recall   f1-score    support
 
