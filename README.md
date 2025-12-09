@@ -67,7 +67,7 @@ Our work is just the stepping stone to exploring machine learning models capable
 
 ## Contributors
 - Sara Lee  [@SUN-NULL](https://github.com/SUN-NULL)
-- Sunny Palcaco  [@saral1025](https://github.com/saral1025)
+- Sunny Palaco  [@saral1025](https://github.com/saral1025)
 
 ## References
 - [MONAI](https://github.com/Project-MONAI/MONAI) for medical imaging preprocessing pipelines.
