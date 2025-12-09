@@ -66,8 +66,8 @@ The confusion matrix assists in understanding where the model is confusing varyi
 Our work is just the stepping stone to exploring machine learning models capable of predicting the full TNM staging. To advance our models practicality, we plan on incorporating the prediction of all 3 Tumor, Nodal, and Metastasis labels. Furthermore, we could translate these labels into a tumor stage prognosis ranging from stage I-IV. 
 
 ## Contributors
-- Sara Lee  [@SUN-NULL](https://github.com/SUN-NULL)
-- Sunny Palaco  [@saral1025](https://github.com/saral1025)
+- Sara Lee  [@saral1025](https://github.com/saral1025)
+- Sunny Palaco  [@SUN-NULL](https://github.com/SUN-NULL)
 
 ## References
 - [MONAI](https://github.com/Project-MONAI/MONAI) for medical imaging preprocessing pipelines.
