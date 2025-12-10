@@ -38,24 +38,24 @@ Utilizing the MONAI framework, MRI volumes go through the following transformati
 
 
 ## 2.5D CNN
-The 2.5D CNN serves as a comrpomise between 2D and 3D convolutional neural networks. In medical imaging, where CT and MRI scans are inherently 3-Dimensional, this balance is crucial. The core idea is that we stack a small amount of neighboring slices (3-7) along the channel dimension. This strategy transforms 3D structural information while retaining a 2D image's spatial shape. This approach allows us to train a limited 3D volume with a 2D CNN. Therefore we gain the beneficial speed and resolution of a 2D CNN paired with the volumetric context of a 3D CNN. 
+The 2.5D CNN serves as a compromise between 2D and 3D convolutional neural networks. In medical imaging, where CT and MRI scans are inherently 3-Dimensional, this balance is crucial. The core idea is that we stack a small amount of neighboring slices (3-7) along the channel dimension. This strategy transforms 3D structural information while retaining a 2D image's spatial shape. This approach allows us to train a limited 3D volume with a 2D CNN. Therefore we gain the beneficial speed and resolution of a 2D CNN paired with the volumetric context of a 3D CNN. 
 
 ### Grad-CAM Visualization
-**XAI (Explainable AI)** is essential for interpreting model decisions and gaining the trust of workers in their respective industry, especially in the field of medical imaging. The following is a sample GradCAM (Gradient Class Activation Map) visual that highlights image regions most influential to the model's prediction.
+**XAI (Explainable AI)** is essential for interpreting model decisions and gaining the trust of workers in their respective industry, especially in the field of medical imaging. The following is a sample **GradCAM (Gradient Class Activation Map)** visual that highlights image regions most influential to the model's prediction.
 
 <img src="results/gradcam_prediction_4.png" alt="GradCAM Label 4, Prediction 4" width="500">
 
 ### Classification Report
                    precision    recall   f1-score    support
 
-       T-Stage 1       0.75      0.54      0.62        84
-       T-Stage 2       0.62      0.65      0.64        75
-       T-Stage 3       0.63      0.87      0.73        52
-       T-Stage 4       0.94      1.00      0.97        17
+       T-Stage 1       0.75      0.54      0.62      84
+       T-Stage 2       0.62      0.65      0.64      75
+       T-Stage 3       0.63      0.87      0.73      52
+       T-Stage 4       0.94      1.00      0.97      17
 
-        accuracy                           0.68        228
-       macro avg       0.74      0.76      0.74        228
-    weighted avg       0.70      0.68      0.68        228
+        accuracy                           0.68      228
+       macro avg       0.74      0.76      0.74      228
+    weighted avg       0.70      0.68      0.68      228
 
 ### Confusion Matrix
 The confusion matrix assists in understanding where the model is confusing varying T-stage values. 
