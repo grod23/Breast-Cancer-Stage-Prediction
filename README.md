@@ -5,7 +5,7 @@ In this work, we developed a **multimodal 2.5D CNN** to predict the T-stage of b
 
 **Gabriel Rodriguez, Sara Lee, Sunny Palaco**  
 *"Breast Cancer T-Stage Prediction and Classification Using Machine Learning"*  
-📄 [View Paper on GitHub](https://github.com/grod23/Breast_MRI_paper)  
+📄 [View Paper on GitHub](https://github.com/grod23/BreastMRIpaper)  
 
 **Clone the repository**
 ```bash
