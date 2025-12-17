@@ -1,6 +1,11 @@
 # Breast-Cancer-Stage-Prediction
 In this work, we developed a **multimodal 2.5D CNN** to predict the T-stage of breast tumors using clinical, radiomic, and imaging features. Multimodal approaches are becoming increasingly prevalent in medical-imaging machine-learning pipelines, and this work combines structured clinical data with 3D MRI volumes from multiple modalities to improve predictive performance. 
 
+**Paper**
+Gabriel Rodriguez, Sara Lee, Sunny Palaco,
+"Breast Cancer T-Stage Prediction and Classification Using Machine Learning"
+[GitHub](https://github.com/grod23/Breast_MRI_paper)
+
 **Clone the repository**
 ```bash
 git clone https://github.com/grod23/Breast-Cancer-Stage-Prediction.git
